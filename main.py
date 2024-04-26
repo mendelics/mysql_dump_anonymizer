@@ -73,7 +73,7 @@ def parse_table_structure(table_name: str, file) -> TableData:
     return TableData(table_name=table_name, table_columns=table_columns, foreign_keys=foreign_keys)
 
 
-def read_dump_structure(dump_filename: str) -> list[TableData]:
+def read_dump_table_structure(dump_filename: str) -> list[TableData]:
     tables_data = []
     with open(dump_filename, "rb") as f:
         for i, line in enumerate(f):
@@ -118,7 +118,7 @@ def write_insert_file(
 ) -> dict[str, dict[str, dict[Any, Any]]]:
     tables_metadata = {
         table_data.table_name: [column.name for column in table_data.table_columns]
-        for table_data in read_dump_structure("dump.sql")
+        for table_data in read_dump_table_structure("dump.sql")
     }
     output_filename = "out_dump.sql"
     output_lines = []
@@ -208,7 +208,7 @@ def get_line_with_randomized_values(
 
 if __name__ == "__main__":
     begin = time.time()
-    tables_structure = read_dump_structure("dump.sql")
+    tables_structure = read_dump_table_structure("dump.sql")
     inserts = read_dump_inserts("dump.sql", tables_structure)
 
     changes = write_insert_file("dump.sql", table_columns_to_change={"sample": ["code"]})
