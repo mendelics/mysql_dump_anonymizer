@@ -190,8 +190,6 @@ if __name__ == "__main__":
     print(f"{time_update_changes_dict=}")
     print(f"Ratio: {time_update_changes_dict/time_total}")
 
-# teste
-
 # associar o valor alterado com o valor antigo, para poder propagar as mudanças nas outras tabelas: valor antigo -> valor alterado (determinístico)
 # não fazer dicionários aninhados (evitar ao máximo)
 # ideia: não salvar no dict a informação da tabela sendo alterada e nem da coluna. simplesmente fazer algum dict como dict["valor antigo"] = "valor alterado"
