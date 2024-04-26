@@ -73,16 +73,44 @@ def parse_table_structure(table_name: str, file) -> TableData:
     return TableData(table_name=table_name, table_columns=table_columns, foreign_keys=foreign_keys)
 
 
-def read_dump_table_structure(dump_filename) -> list[TableData]:
+def read_dump_structure(dump_filename: str) -> list[TableData]:
     tables_data = []
     with open(dump_filename, "rb") as f:
         for i, line in enumerate(f):
             line = line.decode("utf-8").lower().strip()
-            if not line.startswith(f"create table"):
-                continue
-            current_table_name = line.split()[2].strip("`")
-            tables_data.append(parse_table_structure(current_table_name, f))
+            if line.startswith(f"create table"):
+                table_name = line.split()[2].strip("`")
+                tables_data.append(parse_table_structure(table_name, f))
+
     return tables_data
+
+
+def read_dump_inserts(dump_filename: str, dump_structure: list[TableData]) -> dict[str, str]:
+    tables_metadata = {
+        table_data.table_name: [column.name for column in table_data.table_columns]
+        for table_data in dump_structure
+    }
+
+    inserts_data: dict[str, str] = {}
+    with open(dump_filename, "rb") as f:
+        for i, line in enumerate(f):
+            line = line.decode("utf-8").lower().strip()
+            if not line.startswith("insert into"):
+                continue
+
+            table_name = line.lower().split("`")[1]
+            column_names = re.findall("\([^\)]*\)(?= values)", line)
+            if column_names:
+                column_names = [name.strip(" ") for name in column_names[0].strip("() ").replace("`", "").split(",")]
+            else:
+                column_names = tables_metadata[table_name]
+
+            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=values) .*", line)[0].split("),(")]
+            joined_insert_rows = [",".join(row) for row in insert_rows]
+            data = f"INSERT INTO `{table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
+            inserts_data[table_name] = data
+
+    return inserts_data
 
 
 def write_insert_file(
@@ -90,7 +118,7 @@ def write_insert_file(
 ) -> dict[str, dict[str, dict[Any, Any]]]:
     tables_metadata = {
         table_data.table_name: [column.name for column in table_data.table_columns]
-        for table_data in read_dump_table_structure("dump.sql")
+        for table_data in read_dump_structure("dump.sql")
     }
     output_filename = "out_dump.sql"
     output_lines = []
@@ -180,11 +208,10 @@ def get_line_with_randomized_values(
 
 if __name__ == "__main__":
     begin = time.time()
-    tables_structure = read_dump_table_structure("dump.sql")
-    changes_ = write_insert_file(
-        "dump.sql", table_columns_to_change={"test": ["type_name"], "sample": ["code", "volume"]}
-    )
-    changes_.update(write_insert_file("dump.sql", table_columns_to_change={"sample": ["code"]}))
+    tables_structure = read_dump_structure("dump.sql")
+    inserts = read_dump_inserts("dump.sql", tables_structure)
+
+    changes = write_insert_file("dump.sql", table_columns_to_change={"sample": ["code"]})
     time_total = time.time() - begin
     print(f"{time_total=}")
     print(f"{time_update_changes_dict=}")
