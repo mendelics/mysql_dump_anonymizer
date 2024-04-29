@@ -1,9 +1,11 @@
+import json
 import re
 import time
-from typing import Any, Tuple
+from typing import Any
 
 from faker import Faker
 from models import ForeignKeyData, TableColumn, TableData
+import argparse
 
 time_char_by_char = 0
 time_regex = 0
@@ -53,14 +55,17 @@ def parse_table_structure(table_name: str, file) -> TableData:
             split_line = line.split()
             column_name = split_line[0].strip("`").strip(",").lower()
             column_type = split_line[1].strip(",")
-            table_columns.append(TableColumn(name=column_name, sql_data_type=column_type))
+            table_columns.append(
+                TableColumn(name=column_name, sql_data_type=column_type)
+            )
         elif line.startswith("constraint"):
             # Line structure:
             # CONSTRAINT `key_name` FOREIGN KEY (`column_name`) REFERENCES `other_table` (`other_table_column_name`)
             # Example:
             # CONSTRAINT `fk-test-tracker_code-tracker` FOREIGN KEY (`tracker_code`) REFERENCES `tracker` (`code`)
             _, column_name, other_table, other_table_column_name = re.findall(
-                "constraint `([^`]+)` foreign key \(`([^`]+)`\) references `([^`]+)` \(`([^`]+)`\)", line
+                "constraint `([^`]+)` foreign key \(`([^`]+)`\) references `([^`]+)` \(`([^`]+)`\)",
+                line,
             )[0]
             foreign_keys.append(
                 ForeignKeyData(
@@ -70,7 +75,9 @@ def parse_table_structure(table_name: str, file) -> TableData:
                 )
             )
 
-    return TableData(table_name=table_name, table_columns=table_columns, foreign_keys=foreign_keys)
+    return TableData(
+        table_name=table_name, table_columns=table_columns, foreign_keys=foreign_keys
+    )
 
 
 def read_dump_table_structure(dump_filename) -> list[TableData]:
@@ -86,13 +93,14 @@ def read_dump_table_structure(dump_filename) -> list[TableData]:
 
 
 def write_insert_file(
-    dump_filename: str, table_columns_to_change: dict[str, list[str]]
+    dump_filename: str,
+    table_columns_to_change: dict[str, list[str]],
+    output_filename="anon_dump.sql",
 ) -> dict[str, dict[str, dict[Any, Any]]]:
     tables_metadata = {
         table_data.table_name: [column.name for column in table_data.table_columns]
         for table_data in read_dump_table_structure("dump.sql")
     }
-    output_filename = "out_dump.sql"
     output_lines = []
 
     with open(dump_filename, "rb") as f:
@@ -107,20 +115,26 @@ def write_insert_file(
             column_names = re.findall("\([^\)]*\)(?= VALUES)", line)
             insert_contains_column_names = False
             if column_names:
-                column_names = [name.strip(" ") for name in column_names[0].strip("() ").replace("`", "").split(",")]
+                column_names = [
+                    name.strip(" ")
+                    for name in column_names[0].strip("() ").replace("`", "").split(",")
+                ]
                 insert_contains_column_names = True
             else:
                 column_names = tables_metadata[table_name]
             columns_to_change = table_columns_to_change.get(table_name)
             if columns_to_change:
                 column_names_and_indexes_to_change = [
-                    (column_name, column_names.index(column_name)) for column_name in columns_to_change
+                    (column_name, column_names.index(column_name))
+                    for column_name in columns_to_change
                 ]
                 line, changes = get_line_with_randomized_values(
                     line,
                     table_name,
                     column_names_and_indexes_to_change,
-                    columns_in_insert_statement=column_names if insert_contains_column_names else None,
+                    columns_in_insert_statement=(
+                        column_names if insert_contains_column_names else None
+                    ),
                 )
             output_lines.append(line + "\n")
 
@@ -149,7 +163,9 @@ def _update_changes_dict(
         return changes
 
     faker = Faker()
-    changes[table_name][column_name].update({old_value: faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")})
+    changes[table_name][column_name].update(
+        {old_value: faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")}
+    )
     time_update_changes_dict += time.time() - begin_
     return changes
 
@@ -160,35 +176,89 @@ def get_line_with_randomized_values(
     column_names_and_indexes_to_change: list[tuple[str, int]],
     columns_in_insert_statement: list[str] | None = None,
 ) -> tuple[str, dict[str, dict[str, dict[str, dict[str, dict[Any, Any]]]]]]:
-    insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
+    insert_rows = [
+        line_to_list_regex(x)
+        for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")
+    ]
     changes: dict[str, dict[str, dict[Any, Any]]] = {}
     changes[table_name] = {}
 
     for i, row in enumerate(insert_rows):
         for column_name, index in column_names_and_indexes_to_change:
-            changes = _update_changes_dict(changes, table_name, column_name, row, index, i)
+            changes = _update_changes_dict(
+                changes, table_name, column_name, row, index, i
+            )
             row[index] = changes[table_name][column_name][row[index]]
 
     joined_insert_rows = [",".join(row) for row in insert_rows]
     if not columns_in_insert_statement:
-        return f"INSERT INTO `{table_name}` VALUES ({'),('.join(joined_insert_rows)});", changes
+        return (
+            f"INSERT INTO `{table_name}` VALUES ({'),('.join(joined_insert_rows)});",
+            changes,
+        )
     return (
         f"INSERT INTO `{table_name}` ({','.join(columns_in_insert_statement)}) VALUES ({'),('.join(joined_insert_rows)});",
         changes,
     )
 
 
-if __name__ == "__main__":
-    begin = time.time()
-    tables_structure = read_dump_table_structure("dump.sql")
-    changes_ = write_insert_file(
-        "dump.sql", table_columns_to_change={"test": ["type_name"], "sample": ["code", "volume"]}
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mysql_dump_anonymizer",
+        description="CLI tool to anonymize a mysql database dump",
     )
-    changes_.update(write_insert_file("dump.sql", table_columns_to_change={"sample": ["code"]}))
+    parser.add_argument("original_dump", help="File containing the original dump")
+    parser.add_argument(
+        "-t",
+        "--target_file",
+        default="anon_dump.sql",
+        help="File to which the anonymized dump will be written",
+    )
+    parser.add_argument(
+        "-c",
+        "--config_file",
+        help="JSON file containing settings pertaining to target tables and columns",
+    )
+    return parser
+
+
+def main():
+    parser = create_parser()
+    args = parser.parse_args()
+    original = args.original_dump
+    target = args.target_file
+    config_file = args.config_file
+
+    print(original)
+    print(target)
+    print(config_file)
+
+    if config_file:
+        with open(config_file) as settings_file:
+            settings = json.load(settings_file)
+
+    begin = time.time()
+
+    tables_structure = read_dump_table_structure(original)
+
+    changes_ = write_insert_file(
+        original,
+        table_columns_to_change=settings,
+        output_filename=target,
+    )
+    changes_.update(
+        write_insert_file("dump.sql", table_columns_to_change={"sample": ["code"]})
+    )
     time_total = time.time() - begin
     print(f"{time_total=}")
     print(f"{time_update_changes_dict=}")
-    print(f"Ratio: {time_update_changes_dict/time_total}")
+    print(f"Ratio: {time_update_changes_dict / time_total}")
+
+    print(f"Anonymized dump successfully written to {target}")
+
+
+if __name__ == "__main__":
+    main()
 
 # associar o valor alterado com o valor antigo, para poder propagar as mudanças nas outras tabelas: valor antigo -> valor alterado (determinístico)
 # não fazer dicionários aninhados (evitar ao máximo)
