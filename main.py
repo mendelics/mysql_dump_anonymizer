@@ -1,9 +1,9 @@
 import re
 import time
-from typing import Any, Tuple
+from typing import Any
 
 from faker import Faker
-from models import ForeignKeyData, TableColumn, TableData
+from models import ForeignKeyData, TableColumn, TableData, ForeignKeyReference
 
 time_char_by_char = 0
 time_regex = 0
@@ -113,109 +113,106 @@ def read_dump_inserts(dump_filename: str, dump_structure: list[TableData]) -> di
     return inserts_data
 
 
-def write_insert_file(
-    dump_filename: str, table_columns_to_change: dict[str, list[str]]
-) -> dict[str, dict[str, dict[Any, Any]]]:
-    tables_metadata = {
-        table_data.table_name: [column.name for column in table_data.table_columns]
-        for table_data in read_dump_table_structure("dump.sql")
-    }
-    output_filename = "out_dump.sql"
-    output_lines = []
+def _get_fks(
+    table_name: str, columns_to_change: list[str], structure: list[TableData]
+) -> dict[str, list[ForeignKeyReference]]:
+    columns_fk_referenced: dict[str, list[ForeignKeyReference]] = {}
+    for table_data in structure:
+        for fk in table_data.foreign_keys:
+            if fk.referenced_table_name == table_name and fk.referenced_column_name in columns_to_change:
+                fk_reference = ForeignKeyReference(table_name=table_data.table_name, column_name=fk.column_name)
+                if columns_fk_referenced.get(fk.referenced_column_name):
+                    columns_fk_referenced[fk.referenced_column_name].append(fk_reference)
+                else:
+                    columns_fk_referenced[fk.referenced_column_name] = [fk_reference]
 
-    with open(dump_filename, "rb") as f:
-        for line in f:
-            line = line.strip().decode("utf-8")
-            insert_line_prefix = "insert into"
-            if not line.lower().startswith(insert_line_prefix):
-                output_lines.append(line + "\n")
-                continue
-
-            table_name = line.lower().split("`")[1]
-            column_names = re.findall("\([^\)]*\)(?= VALUES)", line)
-            insert_contains_column_names = False
-            if column_names:
-                column_names = [name.strip(" ") for name in column_names[0].strip("() ").replace("`", "").split(",")]
-                insert_contains_column_names = True
-            else:
-                column_names = tables_metadata[table_name]
-            columns_to_change = table_columns_to_change.get(table_name)
-            if columns_to_change:
-                column_names_and_indexes_to_change = [
-                    (column_name, column_names.index(column_name)) for column_name in columns_to_change
-                ]
-                line, changes = get_line_with_randomized_values(
-                    line,
-                    table_name,
-                    column_names_and_indexes_to_change,
-                    columns_in_insert_statement=column_names if insert_contains_column_names else None,
-                )
-            output_lines.append(line + "\n")
-
-    with open(output_filename, "w") as out:
-        out.writelines(output_lines)
-
-    if changes:
-        return changes
+    return columns_fk_referenced
 
 
-def _update_changes_dict(
-    changes: dict[str, dict[str, dict[Any, Any]]],
-    table_name: str,
-    column_name: str,
-    row: list[str],
-    index: int,
-    i: int,
-) -> dict[str, dict[str, dict[Any, Any]]]:
-    global time_update_changes_dict
-    begin_ = time.time()
-    if not changes[table_name].get(column_name):
-        changes[table_name][column_name] = {}
+def get_insert_column_names(insert_line: str) -> list[str]:
+    columns_str = re.findall("\([^\)]*\)(?= VALUES)", insert_line)
+    return [name.strip(" ") for name in columns_str[0].strip("() ").replace("`", "").split(",")]
 
-    old_value = row[index]
-    if changes[table_name][column_name].get(old_value):
-        return changes
 
-    faker = Faker()
-    changes[table_name][column_name].update({old_value: faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")})
-    time_update_changes_dict += time.time() - begin_
-    return changes
+def anonymize(
+    inserts_dict: dict[str, str], structure: list[TableData], table_columns_to_change: dict[str, list[str]]
+) -> dict[str, str]:
+    for table_name, columns_to_change in table_columns_to_change.items():
+        columns_fk_referenced = _get_fks(table_name, columns_to_change, structure)
+        insert_line = inserts_dict[table_name]
+        column_names = get_insert_column_names(insert_line)
+
+
+        column_names_and_indexes_to_change = [
+            (column_name, column_names.index(column_name)) for column_name in columns_to_change
+        ]
+        new_line, changes = get_line_with_randomized_values(
+            insert_line, table_name, column_names_and_indexes_to_change, column_names, columns_fk_referenced,
+        )
+
+        inserts_dict[table_name] = new_line
+        inserts_dict = propagate_changes_in_fks(inserts_dict, table_name, columns_fk_referenced, changes)
+    return inserts_dict
 
 
 def get_line_with_randomized_values(
-    line: str,
-    table_name: str,
-    column_names_and_indexes_to_change: list[tuple[str, int]],
-    columns_in_insert_statement: list[str] | None = None,
-) -> tuple[str, dict[str, dict[str, dict[str, dict[str, dict[Any, Any]]]]]]:
+        line: str,
+        table_name: str,
+        column_names_and_indexes_to_change: list[tuple[str, int]],
+        columns_in_insert_statement: list[str],
+        columns_fk_referenced: dict[str, list[str]],
+) -> tuple[str, dict[str, dict[Any, Any]]]:
     insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
-    changes: dict[str, dict[str, dict[Any, Any]]] = {}
-    changes[table_name] = {}
+    faker = Faker()
+    changes: dict[str, dict[Any, Any]] = {}
 
-    for i, row in enumerate(insert_rows):
-        for column_name, index in column_names_and_indexes_to_change:
-            changes = _update_changes_dict(changes, table_name, column_name, row, index, i)
-            row[index] = changes[table_name][column_name][row[index]]
+    for column_name, index in column_names_and_indexes_to_change:
+        column_changes: dict[Any, Any] = {}
+        for i, row in enumerate(insert_rows):
+            old_value = row[index]
+            if column_name in columns_fk_referenced and not column_changes.get(old_value):
+                row[index] = faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")
+                column_changes[old_value] = row[index]
+            elif column_name in columns_fk_referenced:
+                row[index] = column_changes[old_value]
+        if column_name in columns_fk_referenced:
+            changes[column_name] = column_changes
 
     joined_insert_rows = [",".join(row) for row in insert_rows]
-    if not columns_in_insert_statement:
-        return f"INSERT INTO `{table_name}` VALUES ({'),('.join(joined_insert_rows)});", changes
     return (
         f"INSERT INTO `{table_name}` ({','.join(columns_in_insert_statement)}) VALUES ({'),('.join(joined_insert_rows)});",
-        changes,
+        changes
     )
 
 
+def propagate_changes_in_fks(
+        inserts_dict: dict[str, str],
+        source_table: str,
+        columns_fk_referenced: dict[str, list[ForeignKeyReference]],
+        changes: dict[str, dict[Any, Any]]
+) -> dict[str, str]:
+    for column_name, tables_reference in columns_fk_referenced.items():
+        for table_reference in tables_reference:
+            line = inserts_dict[table_reference.table_name]
+            column_names = get_insert_column_names(line)
+            column_index = column_names.index(table_reference.column_name)
+            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
+            for row in insert_rows:
+                row[column_index] = changes[column_name][row[column_index]]
+
+            joined_insert_rows = [",".join(row) for row in insert_rows]
+            new_line = (
+                f"INSERT INTO `{table_reference.table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
+            )
+            inserts_dict[table_reference.table_name] = new_line
+
+    return inserts_dict
+
+
 if __name__ == "__main__":
-    begin = time.time()
     tables_structure = read_dump_table_structure("dump.sql")
     inserts = read_dump_inserts("dump.sql", tables_structure)
-
-    changes = write_insert_file("dump.sql", table_columns_to_change={"sample": ["code"]})
-    time_total = time.time() - begin
-    print(f"{time_total=}")
-    print(f"{time_update_changes_dict=}")
-    print(f"Ratio: {time_update_changes_dict/time_total}")
+    inserts = anonymize(inserts, tables_structure, {"sample": ["code", "vial_code"], "test": ["code"]})
 
 # associar o valor alterado com o valor antigo, para poder propagar as mudanças nas outras tabelas: valor antigo -> valor alterado (determinístico)
 # não fazer dicionários aninhados (evitar ao máximo)
