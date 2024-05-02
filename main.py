@@ -4,7 +4,12 @@ import time
 from typing import Any
 
 from faker import Faker
-from models import ForeignKeyData, TableColumn, TableData
+from models import (
+    ForeignKeyData,
+    TableColumn,
+    TableData,
+    ColumnToChange,
+)
 import argparse
 
 time_char_by_char = 0
@@ -94,7 +99,7 @@ def read_dump_table_structure(dump_filename) -> list[TableData]:
 
 def write_insert_file(
     dump_filename: str,
-    table_columns_to_change: dict[str, list[str]],
+    table_columns_to_change: dict[str, list[ColumnToChange]],
     output_filename="anon_dump.sql",
 ) -> dict[str, dict[str, dict[Any, Any]]]:
     tables_metadata = {
@@ -125,8 +130,8 @@ def write_insert_file(
             columns_to_change = table_columns_to_change.get(table_name)
             if columns_to_change:
                 column_names_and_indexes_to_change = [
-                    (column_name, column_names.index(column_name))
-                    for column_name in columns_to_change
+                    (column, column_names.index(column.name))
+                    for column in columns_to_change
                 ]
                 line, changes = get_line_with_randomized_values(
                     line,
@@ -173,7 +178,7 @@ def _update_changes_dict(
 def get_line_with_randomized_values(
     line: str,
     table_name: str,
-    column_names_and_indexes_to_change: list[tuple[str, int]],
+    column_names_and_indexes_to_change: list[tuple[ColumnToChange, int]],
     columns_in_insert_statement: list[str] | None = None,
 ) -> tuple[str, dict[str, dict[str, dict[str, dict[str, dict[Any, Any]]]]]]:
     insert_rows = [
@@ -184,11 +189,11 @@ def get_line_with_randomized_values(
     changes[table_name] = {}
 
     for i, row in enumerate(insert_rows):
-        for column_name, index in column_names_and_indexes_to_change:
+        for column, index in column_names_and_indexes_to_change:
             changes = _update_changes_dict(
-                changes, table_name, column_name, row, index, i
+                changes, table_name, column.name, row, index, i
             )
-            row[index] = changes[table_name][column_name][row[index]]
+            row[index] = changes[table_name][column.name][row[index]]
 
     joined_insert_rows = [",".join(row) for row in insert_rows]
     if not columns_in_insert_statement:
@@ -240,15 +245,20 @@ def main():
     begin = time.time()
 
     tables_structure = read_dump_table_structure(original)
+    table_column_changes: dict[str, list[ColumnToChange]] = {
+        table_name: [ColumnToChange.parse_obj(column) for column in columns]
+        for table_name, columns in settings
+    }
 
     changes_ = write_insert_file(
         original,
-        table_columns_to_change=settings,
+        table_columns_to_change=table_column_changes,
         output_filename=target,
     )
-    changes_.update(
-        write_insert_file("dump.sql", table_columns_to_change={"sample": ["code"]})
-    )
+
+    # changes_.update(
+    #     write_insert_file("dump.sql", table_columns_to_change={"sample": ["code"]})
+    # )
     time_total = time.time() - begin
     print(f"{time_total=}")
     print(f"{time_update_changes_dict=}")

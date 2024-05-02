@@ -16,3 +16,9 @@ class TableData(BaseModel):
     table_name: str
     table_columns: list[TableColumn]
     foreign_keys: list[ForeignKeyData]
+
+
+class ColumnToChange(BaseModel):
+    name: str
+    subtype: str | None = None
+    regex: str | None = None
