@@ -170,8 +170,8 @@ def get_line_with_randomized_values(
         column_changes: dict[Any, Any] = {}
         for i, row in enumerate(insert_rows):
             old_value = row[index]
+            row[index] = faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")
             if column_name in columns_fk_referenced and not column_changes.get(old_value):
-                row[index] = faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")
                 column_changes[old_value] = row[index]
             elif column_name in columns_fk_referenced:
                 row[index] = column_changes[old_value]
@@ -213,6 +213,7 @@ if __name__ == "__main__":
     tables_structure = read_dump_table_structure("dump.sql")
     inserts = read_dump_inserts("dump.sql", tables_structure)
     inserts = anonymize(inserts, tables_structure, {"sample": ["code", "vial_code"], "test": ["code"]})
+
 
 # associar o valor alterado com o valor antigo, para poder propagar as mudanças nas outras tabelas: valor antigo -> valor alterado (determinístico)
 # não fazer dicionários aninhados (evitar ao máximo)
