@@ -12,26 +12,6 @@ time_total = 0
 time_update_changes_dict = 0
 
 
-def line_to_list(line: str) -> list[str]:
-    global time_char_by_char
-    begin = time.time()
-    clean_line = line.strip("()").replace("`", "")
-    ret = []
-    quote_mark = 0
-    field = ""
-    for c in clean_line:
-        if c == "," and not quote_mark % 2:
-            ret.append(field)
-            field = ""
-        elif c == "'":
-            quote_mark += 1
-        else:
-            field += c
-    time_char_by_char += time.time() - begin
-
-    return ret + [field]
-
-
 def line_to_list_regex(line: str) -> list[str]:
     global time_regex
     begin = time.time()
