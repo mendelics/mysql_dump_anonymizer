@@ -139,7 +139,7 @@ def anonymize(
         )
 
         inserts_dict[table_name] = new_line
-        inserts_dict = propagate_changes_in_fks(inserts_dict, table_name, columns_fk_referenced, changes)
+        inserts_dict = propagate_changes_in_fks(inserts_dict, columns_fk_referenced, changes)
     return inserts_dict
 
 
@@ -175,7 +175,6 @@ def get_line_with_randomized_values(
 
 def propagate_changes_in_fks(
         inserts_dict: dict[str, str],
-        source_table: str,
         columns_fk_referenced: dict[str, list[ForeignKeyReference]],
         changes: dict[str, dict[Any, Any]]
 ) -> dict[str, str]:
