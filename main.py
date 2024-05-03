@@ -224,11 +224,3 @@ if __name__ == "__main__":
     inserts = anonymize(inserts, tables_structure, {"sample": ["code", "vial_code"], "test": ["code"]})
 
     write_in_file("dump.sql", inserts)
-
-
-
-
-# associar o valor alterado com o valor antigo, para poder propagar as mudanças nas outras tabelas: valor antigo -> valor alterado (determinístico)
-# não fazer dicionários aninhados (evitar ao máximo)
-# ideia: não salvar no dict a informação da tabela sendo alterada e nem da coluna. simplesmente fazer algum dict como dict["valor antigo"] = "valor alterado"
-# ideia melhor: alterar uma tabela de cada vez (das que o usuário pediu para alterar). Depois de alterar uma coluna dessa tabela que serve de foreign key para outra tabela, alteramos todas as colunas das tabelas que referenciam aquela foreign key.
