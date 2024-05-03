@@ -94,21 +94,29 @@ def read_dump_inserts(dump_filename: str, dump_structure: list[TableData]) -> di
     inserts_data: dict[str, str] = {}
     with open(dump_filename, "rb") as f:
         for i, line in enumerate(f):
-            line = line.decode("utf-8").lower().strip()
-            if not line.startswith("insert into"):
+            line = line.decode("utf-8").strip()
+            if not line.startswith("INSERT INTO"):
                 continue
 
             table_name = line.lower().split("`")[1]
-            column_names = re.findall("\([^\)]*\)(?= values)", line)
+            if table_name == "dependency_log":
+                a = 3
+            column_names = re.findall("\([^\)]*\)(?= VALUES)", line)
             if column_names:
                 column_names = [name.strip(" ") for name in column_names[0].strip("() ").replace("`", "").split(",")]
             else:
                 column_names = tables_metadata[table_name]
 
-            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=values) .*", line)[0].split("),(")]
+            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
             joined_insert_rows = [",".join(row) for row in insert_rows]
+            column_names = [f"`{column_name}`" for column_name in column_names]
             data = f"INSERT INTO `{table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
-            inserts_data[table_name] = data
+
+            if inserts_data.get(table_name):
+                data = re.sub(f"INSERT INTO `{table_name}` \([^\(\)]+\) VALUES", ",", data)
+                inserts_data[table_name] = inserts_data[table_name].rstrip(";\n") + data
+            else:
+                inserts_data[table_name] = data
 
     return inserts_data
 
@@ -209,10 +217,35 @@ def propagate_changes_in_fks(
     return inserts_dict
 
 
+def write_in_file(dump_filename: str, lines: list[str]) -> None:
+    output_filename = "out_dump.sql"
+    output_lines = []
+    seen_tables = set()
+
+    with open(dump_filename, "rb") as f:
+        for i, line in enumerate(f):
+            line = line.decode("utf-8").strip()
+            if not line.startswith("INSERT INTO"):
+                output_lines.append(line + "\n")
+            else:
+                table_name = line.lower().split("`")[1]
+                if table_name in seen_tables:
+                    continue
+                output_lines.append(lines[table_name] + "\n")
+                seen_tables.add(table_name)
+
+    with open(output_filename, "w") as out:
+        out.writelines(output_lines)
+
+
 if __name__ == "__main__":
     tables_structure = read_dump_table_structure("dump.sql")
     inserts = read_dump_inserts("dump.sql", tables_structure)
     inserts = anonymize(inserts, tables_structure, {"sample": ["code", "vial_code"], "test": ["code"]})
+
+    write_in_file("dump.sql", inserts)
+
+
 
 
 # associar o valor alterado com o valor antigo, para poder propagar as mudanças nas outras tabelas: valor antigo -> valor alterado (determinístico)
