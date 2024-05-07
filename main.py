@@ -1,9 +1,11 @@
+import json
 import re
 import time
 from typing import Any
 
 from faker import Faker
 from models import ForeignKeyData, TableColumn, TableData, ForeignKeyReference
+import argparse
 
 time_char_by_char = 0
 time_regex = 0
@@ -235,8 +237,7 @@ def propagate_changes_in_fks(
     return inserts_dict
 
 
-def write_in_file(dump_filename: str, lines: list[str]) -> None:
-    output_filename = "out_dump.sql"
+def write_in_file(dump_filename: str, output_filename: str, lines: dict[str, str]) -> None:
     output_lines = []
     seen_tables = set()
 
@@ -256,11 +257,55 @@ def write_in_file(dump_filename: str, lines: list[str]) -> None:
         out.writelines(output_lines)
 
 
-if __name__ == "__main__":
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mysql_dump_anonymizer",
+        description="CLI tool to anonymize a mysql database dump",
+    )
+    parser.add_argument("original_dump", help="File containing the original dump")
+    parser.add_argument(
+        "-t",
+        "--target_file",
+        default="anon_dump.sql",
+        help="File to which the anonymized dump will be written",
+    )
+    parser.add_argument(
+        "-c",
+        "--config_file",
+        help="JSON file containing settings pertaining to target tables and columns",
+    )
+    return parser
+
+
+def main():
+    parser = create_parser()
+    args = parser.parse_args()
+    original = args.original_dump
+    target = args.target_file
+    config_file = args.config_file
+
+    print(f"Preparing file {original}")
+    if config_file:
+        print(f"Config file '{config_file}' successfully loaded")
+    else:
+        print("No config file provided")
+
+    if config_file:
+        with open(config_file) as settings_file:
+            settings = json.load(settings_file)
+
+    begin = time.time()
+
     tables_structure = read_dump_table_structure("dump.sql")
     inserts = read_dump_inserts("dump.sql", tables_structure)
     inserts = anonymize(
         inserts, tables_structure, {"sample": ["code", "vial_code"], "test": ["code"]}
     )
 
-    write_in_file("dump.sql", inserts)
+    print(f"Writing changes in file {target}")
+    write_in_file("dump.sql", target, inserts)
+    print(f"Anonymized dump successfully written to {target} in {time.time() - begin:.2f} seconds")
+
+
+if __name__ == "__main__":
+    main()
