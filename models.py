@@ -21,3 +21,14 @@ class TableData(BaseModel):
     table_name: str
     table_columns: list[TableColumn]
     foreign_keys: list[ForeignKeyData]
+
+
+class ColumnChangeSettings(BaseModel):
+    name: str
+    subtype: str | None
+    regex: str | None
+
+
+class TableChangeSettings(BaseModel):
+    table_name: str
+    columns_to_change: list[ColumnChangeSettings]
