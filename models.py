@@ -1,6 +1,11 @@
 from pydantic import BaseModel
 
 
+class ForeignKeyReference(BaseModel):
+    table_name: str
+    column_name: str
+
+
 class ForeignKeyData(BaseModel):
     column_name: str
     referenced_table_name: str
