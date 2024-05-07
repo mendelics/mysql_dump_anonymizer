@@ -33,14 +33,17 @@ def parse_table_structure(table_name: str, file) -> TableData:
             split_line = line.split()
             column_name = split_line[0].strip("`").strip(",").lower()
             column_type = split_line[1].strip(",")
-            table_columns.append(TableColumn(name=column_name, sql_data_type=column_type))
+            table_columns.append(
+                TableColumn(name=column_name, sql_data_type=column_type)
+            )
         elif line.startswith("constraint"):
             # Line structure:
             # CONSTRAINT `key_name` FOREIGN KEY (`column_name`) REFERENCES `other_table` (`other_table_column_name`)
             # Example:
             # CONSTRAINT `fk-test-tracker_code-tracker` FOREIGN KEY (`tracker_code`) REFERENCES `tracker` (`code`)
             _, column_name, other_table, other_table_column_name = re.findall(
-                "constraint `([^`]+)` foreign key \(`([^`]+)`\) references `([^`]+)` \(`([^`]+)`\)", line
+                "constraint `([^`]+)` foreign key \(`([^`]+)`\) references `([^`]+)` \(`([^`]+)`\)",
+                line,
             )[0]
             foreign_keys.append(
                 ForeignKeyData(
@@ -50,7 +53,9 @@ def parse_table_structure(table_name: str, file) -> TableData:
                 )
             )
 
-    return TableData(table_name=table_name, table_columns=table_columns, foreign_keys=foreign_keys)
+    return TableData(
+        table_name=table_name, table_columns=table_columns, foreign_keys=foreign_keys
+    )
 
 
 def read_dump_table_structure(dump_filename: str) -> list[TableData]:
@@ -65,7 +70,9 @@ def read_dump_table_structure(dump_filename: str) -> list[TableData]:
     return tables_data
 
 
-def read_dump_inserts(dump_filename: str, dump_structure: list[TableData]) -> dict[str, str]:
+def read_dump_inserts(
+    dump_filename: str, dump_structure: list[TableData]
+) -> dict[str, str]:
     tables_metadata = {
         table_data.table_name: [column.name for column in table_data.table_columns]
         for table_data in dump_structure
@@ -83,17 +90,25 @@ def read_dump_inserts(dump_filename: str, dump_structure: list[TableData]) -> di
                 a = 3
             column_names = re.findall("\([^\)]*\)(?= VALUES)", line)
             if column_names:
-                column_names = [name.strip(" ") for name in column_names[0].strip("() ").replace("`", "").split(",")]
+                column_names = [
+                    name.strip(" ")
+                    for name in column_names[0].strip("() ").replace("`", "").split(",")
+                ]
             else:
                 column_names = tables_metadata[table_name]
 
-            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
+            insert_rows = [
+                line_to_list_regex(x)
+                for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")
+            ]
             joined_insert_rows = [",".join(row) for row in insert_rows]
             column_names = [f"`{column_name}`" for column_name in column_names]
             data = f"INSERT INTO `{table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
 
             if inserts_data.get(table_name):
-                data = re.sub(f"INSERT INTO `{table_name}` \([^\(\)]+\) VALUES", ",", data)
+                data = re.sub(
+                    f"INSERT INTO `{table_name}` \([^\(\)]+\) VALUES", ",", data
+                )
                 inserts_data[table_name] = inserts_data[table_name].rstrip(";\n") + data
             else:
                 inserts_data[table_name] = data
@@ -107,10 +122,17 @@ def _get_fks(
     columns_fk_referenced: dict[str, list[ForeignKeyReference]] = {}
     for table_data in structure:
         for fk in table_data.foreign_keys:
-            if fk.referenced_table_name == table_name and fk.referenced_column_name in columns_to_change:
-                fk_reference = ForeignKeyReference(table_name=table_data.table_name, column_name=fk.column_name)
+            if (
+                fk.referenced_table_name == table_name
+                and fk.referenced_column_name in columns_to_change
+            ):
+                fk_reference = ForeignKeyReference(
+                    table_name=table_data.table_name, column_name=fk.column_name
+                )
                 if columns_fk_referenced.get(fk.referenced_column_name):
-                    columns_fk_referenced[fk.referenced_column_name].append(fk_reference)
+                    columns_fk_referenced[fk.referenced_column_name].append(
+                        fk_reference
+                    )
                 else:
                     columns_fk_referenced[fk.referenced_column_name] = [fk_reference]
 
@@ -119,38 +141,52 @@ def _get_fks(
 
 def get_insert_column_names(insert_line: str) -> list[str]:
     columns_str = re.findall("\([^\)]*\)(?= VALUES)", insert_line)
-    return [name.strip(" ") for name in columns_str[0].strip("() ").replace("`", "").split(",")]
+    return [
+        name.strip(" ")
+        for name in columns_str[0].strip("() ").replace("`", "").split(",")
+    ]
 
 
 def anonymize(
-    inserts_dict: dict[str, str], structure: list[TableData], table_columns_to_change: dict[str, list[str]]
+    inserts_dict: dict[str, str],
+    structure: list[TableData],
+    table_columns_to_change: dict[str, list[str]],
 ) -> dict[str, str]:
     for table_name, columns_to_change in table_columns_to_change.items():
         columns_fk_referenced = _get_fks(table_name, columns_to_change, structure)
         insert_line = inserts_dict[table_name]
         column_names = get_insert_column_names(insert_line)
 
-
         column_names_and_indexes_to_change = [
-            (column_name, column_names.index(column_name)) for column_name in columns_to_change
+            (column_name, column_names.index(column_name))
+            for column_name in columns_to_change
         ]
         new_line, changes = get_line_with_randomized_values(
-            insert_line, table_name, column_names_and_indexes_to_change, column_names, columns_fk_referenced,
+            insert_line,
+            table_name,
+            column_names_and_indexes_to_change,
+            column_names,
+            columns_fk_referenced,
         )
 
         inserts_dict[table_name] = new_line
-        inserts_dict = propagate_changes_in_fks(inserts_dict, columns_fk_referenced, changes)
+        inserts_dict = propagate_changes_in_fks(
+            inserts_dict, columns_fk_referenced, changes
+        )
     return inserts_dict
 
 
 def get_line_with_randomized_values(
-        line: str,
-        table_name: str,
-        column_names_and_indexes_to_change: list[tuple[str, int]],
-        columns_in_insert_statement: list[str],
-        columns_fk_referenced: dict[str, list[str]],
+    line: str,
+    table_name: str,
+    column_names_and_indexes_to_change: list[tuple[str, int]],
+    columns_in_insert_statement: list[str],
+    columns_fk_referenced: dict[str, list[str]],
 ) -> tuple[str, dict[str, dict[Any, Any]]]:
-    insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
+    insert_rows = [
+        line_to_list_regex(x)
+        for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")
+    ]
     faker = Faker()
     changes: dict[str, dict[Any, Any]] = {}
 
@@ -159,7 +195,9 @@ def get_line_with_randomized_values(
         for i, row in enumerate(insert_rows):
             old_value = row[index]
             row[index] = faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")
-            if column_name in columns_fk_referenced and not column_changes.get(old_value):
+            if column_name in columns_fk_referenced and not column_changes.get(
+                old_value
+            ):
                 column_changes[old_value] = row[index]
             elif column_name in columns_fk_referenced:
                 row[index] = column_changes[old_value]
@@ -169,28 +207,29 @@ def get_line_with_randomized_values(
     joined_insert_rows = [",".join(row) for row in insert_rows]
     return (
         f"INSERT INTO `{table_name}` ({','.join(columns_in_insert_statement)}) VALUES ({'),('.join(joined_insert_rows)});",
-        changes
+        changes,
     )
 
 
 def propagate_changes_in_fks(
-        inserts_dict: dict[str, str],
-        columns_fk_referenced: dict[str, list[ForeignKeyReference]],
-        changes: dict[str, dict[Any, Any]]
+    inserts_dict: dict[str, str],
+    columns_fk_referenced: dict[str, list[ForeignKeyReference]],
+    changes: dict[str, dict[Any, Any]],
 ) -> dict[str, str]:
     for column_name, tables_reference in columns_fk_referenced.items():
         for table_reference in tables_reference:
             line = inserts_dict[table_reference.table_name]
             column_names = get_insert_column_names(line)
             column_index = column_names.index(table_reference.column_name)
-            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
+            insert_rows = [
+                line_to_list_regex(x)
+                for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")
+            ]
             for row in insert_rows:
                 row[column_index] = changes[column_name][row[column_index]]
 
             joined_insert_rows = [",".join(row) for row in insert_rows]
-            new_line = (
-                f"INSERT INTO `{table_reference.table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
-            )
+            new_line = f"INSERT INTO `{table_reference.table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
             inserts_dict[table_reference.table_name] = new_line
 
     return inserts_dict
@@ -220,6 +259,8 @@ def write_in_file(dump_filename: str, lines: list[str]) -> None:
 if __name__ == "__main__":
     tables_structure = read_dump_table_structure("dump.sql")
     inserts = read_dump_inserts("dump.sql", tables_structure)
-    inserts = anonymize(inserts, tables_structure, {"sample": ["code", "vial_code"], "test": ["code"]})
+    inserts = anonymize(
+        inserts, tables_structure, {"sample": ["code", "vial_code"], "test": ["code"]}
+    )
 
     write_in_file("dump.sql", inserts)
