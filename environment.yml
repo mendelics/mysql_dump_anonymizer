@@ -1,0 +1,9 @@
+name: dump-anon
+channels:
+  - defaults
+dependencies:
+  - faker
+  - pydantic
+  - pip
+  - pip:
+      - rstr
