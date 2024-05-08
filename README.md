@@ -8,8 +8,15 @@ python3 <dump original> --target_file <arquivo dump de saída> --config_file <ar
 ```
 O script automaticamente propaga os valores alterados para foreign keys correspondentes. Desta forma, não se deve configurá-lo para alterar tanto uma coluna "mãe" de uma foreign key quanto uma "filha".
 
+## Instalação
+
+Basta instalar o ambiente conda associado:
+```
+conda env create -f environment.yml
+```
 
 ### Arquivo de configuração
+Para utilizar o script, é necessário um arquivo de configuração, para especificar que colunas devem ser alteradas.
 Abaixo, um exemplo de arquivo de configuração.
 ```
 {
