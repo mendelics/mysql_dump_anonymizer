@@ -9,6 +9,8 @@ from models import ForeignKeyData, TableColumn, TableData, ForeignKeyReference, 
 import argparse
 
 from rstr import xeger
+from datetime import datetime as dt
+import random
 
 time_char_by_char = 0
 time_regex = 0
@@ -47,7 +49,7 @@ def parse_table_structure(table_name: str, file) -> TableData:
             # Example:
             # CONSTRAINT `fk-test-tracker_code-tracker` FOREIGN KEY (`tracker_code`) REFERENCES `tracker` (`code`)
             _, column_name, other_table, other_table_column_name = re.findall(
-                "constraint `([^`]+)` foreign key \(`([^`]+)`\) references `([^`]+)` \(`([^`]+)`\)",
+                r"constraint `([^`]+)` foreign key \(`([^`]+)`\) references `([^`]+)` \(`([^`]+)`\)",
                 line,
             )[0]
             foreign_keys.append(
@@ -93,7 +95,7 @@ def read_dump_inserts(
             table_name = line.lower().split("`")[1]
             if table_name == "dependency_log":
                 a = 3
-            column_names = re.findall("\([^\)]*\)(?= VALUES)", line)
+            column_names = re.findall(r"\([^\)]*\)(?= VALUES)", line)
             if column_names:
                 column_names = [
                     name.strip(" ")
@@ -112,7 +114,7 @@ def read_dump_inserts(
 
             if inserts_data.get(table_name):
                 data = re.sub(
-                    f"INSERT INTO `{table_name}` \([^\(\)]+\) VALUES", ",", data
+                    rf"INSERT INTO `{table_name}` \([^\(\)]+\) VALUES", ",", data
                 )
                 inserts_data[table_name] = inserts_data[table_name].rstrip(";\n") + data
             else:
@@ -145,7 +147,7 @@ def _get_fks(
 
 
 def get_insert_column_names(insert_line: str) -> list[str]:
-    columns_str = re.findall("\([^\)]*\)(?= VALUES)", insert_line)
+    columns_str = re.findall(r"\([^\)]*\)(?= VALUES)", insert_line)
     return [
         name.strip(" ")
         for name in columns_str[0].strip("() ").replace("`", "").split(",")
@@ -160,13 +162,16 @@ def anonymize(
     for table_settings in table_columns_to_change:
         table_name = table_settings.table_name
         columns_to_change = table_settings.columns_to_change
+        table_structure = [table for table in structure if table.table_name == table_name][0]
+        column_types = {column.name: column.sql_data_type for column in table_structure.table_columns}
+
         columns_to_change_names = [column.name for column in columns_to_change]
         columns_fk_referenced = _get_fks(table_name, columns_to_change_names, structure)
         insert_line = inserts_dict[table_name]
         column_names = get_insert_column_names(insert_line)
 
         column_names_and_indexes_to_change = [
-            (column, column_names.index(column.name))
+            (column, column_names.index(column.name), column_types.get(column.name))
             for column in columns_to_change
         ]
         new_line, changes = get_line_with_randomized_values(
@@ -187,9 +192,9 @@ def anonymize(
 def get_line_with_randomized_values(
     line: str,
     table_name: str,
-    column_names_and_indexes_to_change: list[tuple[ColumnChangeSettings, int]],
+    column_names_and_indexes_to_change: list[tuple[ColumnChangeSettings, int, str]],
     columns_in_insert_statement: list[str],
-    columns_fk_referenced: dict[str, list[str]],
+    columns_fk_referenced: dict[str, list[ForeignKeyReference]],
 ) -> tuple[str, dict[str, dict[Any, Any]]]:
     insert_rows = [
         line_to_list_regex(x)
@@ -198,7 +203,7 @@ def get_line_with_randomized_values(
     faker = Faker()
     changes: dict[str, dict[Any, Any]] = {}
 
-    for column, index in column_names_and_indexes_to_change:
+    for column, index, column_sql_type in column_names_and_indexes_to_change:
         column_name = column.name
         column_changes: dict[Any, Any] = {}
         for i, row in enumerate(insert_rows):
@@ -207,6 +212,19 @@ def get_line_with_randomized_values(
                 row[index] = f"'{faker.uuid4()}'"
             elif column.regex is not None:
                 row[index] = f"'{xeger(column.regex)}'"
+            elif column_sql_type.startswith("datetime"):
+                row[index] = f"'{faker.date_time().strftime("%Y-%m-%d %H:%M:%S%L")}'"
+            elif column_sql_type == "date":
+                row[index] = f"'{faker.date_time().strftime("%Y-%m-%d")}'"
+            elif column_sql_type == "float":
+                row[index] = f"{random.uniform(*column.interval):.3f}" if column.interval else f"{random.uniform(0, 1):.3f}"
+            elif column_sql_type == "int":
+                row[index] = str(random.randint(*[int(endpoint) for endpoint in column.interval])) if column.interval else str(random.randint(0, 100))
+            elif column_sql_type.startswith("tinyint"):
+                row[index] = random.choice([0, 1])
+            elif column_sql_type.startswith("enum"):
+                enum_values = column_sql_type[column_sql_type.index("m") + 1:].strip("()").split(",")
+                row[index] = random.choice(enum_values)
             else:
                 row[index] = faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")
             if column_name in columns_fk_referenced and not column_changes.get(
@@ -297,16 +315,17 @@ def main():
     config_file = args.config_file
 
     print(f"Preparing file {original}")
-    if config_file:
-        print(f"Config file '{config_file}' successfully loaded")
-    else:
-        print("No config file provided")
+    with open(original):
+        print(f"File {original} successfully opened")
 
     if config_file:
         with open(config_file) as settings_file:
             settings = json.load(settings_file)
+        print(f"Config file '{config_file}' successfully loaded")
+    else:
+        raise Exception("No config file provided")
 
-    parsed_settings = [TableChangeSettings.parse_obj(table) for table in settings["tables"]]
+    parsed_settings = [TableChangeSettings.model_validate(table) for table in settings["tables"]]
 
     begin = time.time()
 
