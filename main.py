@@ -4,8 +4,11 @@ import time
 from typing import Any
 
 from faker import Faker
-from models import ForeignKeyData, TableColumn, TableData, ForeignKeyReference
+from models import ForeignKeyData, TableColumn, TableData, ForeignKeyReference, TableChangeSettings, \
+    ColumnChangeSettings
 import argparse
+
+from rstr import xeger
 
 time_char_by_char = 0
 time_regex = 0
@@ -152,16 +155,19 @@ def get_insert_column_names(insert_line: str) -> list[str]:
 def anonymize(
     inserts_dict: dict[str, str],
     structure: list[TableData],
-    table_columns_to_change: dict[str, list[str]],
+    table_columns_to_change: list[TableChangeSettings],
 ) -> dict[str, str]:
-    for table_name, columns_to_change in table_columns_to_change.items():
-        columns_fk_referenced = _get_fks(table_name, columns_to_change, structure)
+    for table_settings in table_columns_to_change:
+        table_name = table_settings.table_name
+        columns_to_change = table_settings.columns_to_change
+        columns_to_change_names = [column.name for column in columns_to_change]
+        columns_fk_referenced = _get_fks(table_name, columns_to_change_names, structure)
         insert_line = inserts_dict[table_name]
         column_names = get_insert_column_names(insert_line)
 
         column_names_and_indexes_to_change = [
-            (column_name, column_names.index(column_name))
-            for column_name in columns_to_change
+            (column, column_names.index(column.name))
+            for column in columns_to_change
         ]
         new_line, changes = get_line_with_randomized_values(
             insert_line,
@@ -181,7 +187,7 @@ def anonymize(
 def get_line_with_randomized_values(
     line: str,
     table_name: str,
-    column_names_and_indexes_to_change: list[tuple[str, int]],
+    column_names_and_indexes_to_change: list[tuple[ColumnChangeSettings, int]],
     columns_in_insert_statement: list[str],
     columns_fk_referenced: dict[str, list[str]],
 ) -> tuple[str, dict[str, dict[Any, Any]]]:
@@ -192,11 +198,17 @@ def get_line_with_randomized_values(
     faker = Faker()
     changes: dict[str, dict[Any, Any]] = {}
 
-    for column_name, index in column_names_and_indexes_to_change:
+    for column, index in column_names_and_indexes_to_change:
+        column_name = column.name
         column_changes: dict[Any, Any] = {}
         for i, row in enumerate(insert_rows):
             old_value = row[index]
-            row[index] = faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")
+            if column.subtype == "UUID":
+                row[index] = f"'{faker.uuid4()}'"
+            elif column.regex is not None:
+                row[index] = f"'{xeger(column.regex)}'"
+            else:
+                row[index] = faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")
             if column_name in columns_fk_referenced and not column_changes.get(
                 old_value
             ):
@@ -294,16 +306,18 @@ def main():
         with open(config_file) as settings_file:
             settings = json.load(settings_file)
 
+    parsed_settings = [TableChangeSettings.parse_obj(table) for table in settings["tables"]]
+
     begin = time.time()
 
-    tables_structure = read_dump_table_structure("dump.sql")
-    inserts = read_dump_inserts("dump.sql", tables_structure)
+    tables_structure = read_dump_table_structure(original)
+    inserts = read_dump_inserts(original, tables_structure)
     inserts = anonymize(
-        inserts, tables_structure, {"sample": ["code", "vial_code"], "test": ["code"]}
+        inserts, tables_structure, parsed_settings
     )
 
     print(f"Writing changes in file {target}")
-    write_in_file("dump.sql", target, inserts)
+    write_in_file(original, target, inserts)
     print(f"Anonymized dump successfully written to {target} in {time.time() - begin:.2f} seconds")
 
 
