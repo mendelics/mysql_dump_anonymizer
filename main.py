@@ -213,9 +213,11 @@ def get_line_with_randomized_values(
             elif column.regex is not None:
                 row[index] = f"'{xeger(column.regex)}'"
             elif column_sql_type.startswith("datetime"):
-                row[index] = f"'{faker.date_time().strftime("%Y-%m-%d %H:%M:%S%L")}'"
+                date = faker.date_time().strftime("%Y-%m-%d %H:%M:%S%L")
+                row[index] = f"'{date}'"
             elif column_sql_type == "date":
-                row[index] = f"'{faker.date_time().strftime("%Y-%m-%d")}'"
+                date = faker.date_time().strftime("%Y-%m-%d")
+                row[index] = f"'{date}'"
             elif column_sql_type == "float":
                 row[index] = f"{random.uniform(*column.interval):.3f}" if column.interval else f"{random.uniform(0, 1):.3f}"
             elif column_sql_type == "int":
@@ -250,6 +252,8 @@ def propagate_changes_in_fks(
 ) -> dict[str, str]:
     for column_name, tables_reference in columns_fk_referenced.items():
         for table_reference in tables_reference:
+            if not inserts_dict.get(table_reference.table_name):
+                continue
             line = inserts_dict[table_reference.table_name]
             column_names = get_insert_column_names(line)
             column_index = column_names.index(table_reference.column_name)
