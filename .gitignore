@@ -1,1 +1,21 @@
 *.sql
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+# IDEs and editors
+.c9/
+.classpath
+.history/*
+.idea/
+.project
+.settings/
+*.launch
+*.sublime-workspace
+
+# VS Code
+.vscode/*
+!.vscode/launch.json

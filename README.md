@@ -4,7 +4,7 @@ Este projeto é uma ferramenta CLI para gerar um arquivo dump mysql com valores 
 após ser fornecido um arquivo dump mysql como entrada.
 Uso:
 ```
-python3 <dump original> --target_file <arquivo dump de saída> --config_file <arquivo .json de configurações>
+python mysql_dump_anonymizer/main.py <dump original> --target_file <arquivo dump de saída> --config_file <arquivo .json de configurações>
 ```
 O script automaticamente propaga os valores alterados para foreign keys correspondentes. Desta forma, não se deve configurá-lo para alterar tanto uma coluna "mãe" de uma foreign key quanto uma "filha".
 
