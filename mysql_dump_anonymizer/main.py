@@ -4,12 +4,17 @@ import time
 from typing import Any
 
 from faker import Faker
-from models import ForeignKeyData, TableColumn, TableData, ForeignKeyReference, TableChangeSettings, \
-    ColumnChangeSettings
+from models import (
+    ForeignKeyData,
+    TableColumn,
+    TableData,
+    ForeignKeyReference,
+    TableChangeSettings,
+    ColumnChangeSettings,
+)
 import argparse
 
 from rstr import xeger
-from datetime import datetime as dt
 import random
 
 time_char_by_char = 0
@@ -40,9 +45,7 @@ def parse_table_structure(table_name: str, file) -> TableData:
             split_line = line.split()
             column_name = split_line[0].strip("`").strip(",").lower()
             column_type = split_line[1].strip(",")
-            table_columns.append(
-                TableColumn(name=column_name, sql_data_type=column_type)
-            )
+            table_columns.append(TableColumn(name=column_name, sql_data_type=column_type))
         elif line.startswith("constraint"):
             # Line structure:
             # CONSTRAINT `key_name` FOREIGN KEY (`column_name`) REFERENCES `other_table` (`other_table_column_name`)
@@ -60,9 +63,7 @@ def parse_table_structure(table_name: str, file) -> TableData:
                 )
             )
 
-    return TableData(
-        table_name=table_name, table_columns=table_columns, foreign_keys=foreign_keys
-    )
+    return TableData(table_name=table_name, table_columns=table_columns, foreign_keys=foreign_keys)
 
 
 def read_dump_table_structure(dump_filename: str) -> list[TableData]:
@@ -77,12 +78,9 @@ def read_dump_table_structure(dump_filename: str) -> list[TableData]:
     return tables_data
 
 
-def read_dump_inserts(
-    dump_filename: str, dump_structure: list[TableData]
-) -> dict[str, str]:
+def read_dump_inserts(dump_filename: str, dump_structure: list[TableData]) -> dict[str, str]:
     tables_metadata = {
-        table_data.table_name: [column.name for column in table_data.table_columns]
-        for table_data in dump_structure
+        table_data.table_name: [column.name for column in table_data.table_columns] for table_data in dump_structure
     }
 
     inserts_data: dict[str, str] = {}
@@ -97,25 +95,17 @@ def read_dump_inserts(
                 a = 3
             column_names = re.findall(r"\([^\)]*\)(?= VALUES)", line)
             if column_names:
-                column_names = [
-                    name.strip(" ")
-                    for name in column_names[0].strip("() ").replace("`", "").split(",")
-                ]
+                column_names = [name.strip(" ") for name in column_names[0].strip("() ").replace("`", "").split(",")]
             else:
                 column_names = tables_metadata[table_name]
 
-            insert_rows = [
-                line_to_list_regex(x)
-                for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")
-            ]
+            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
             joined_insert_rows = [",".join(row) for row in insert_rows]
             column_names = [f"`{column_name}`" for column_name in column_names]
             data = f"INSERT INTO `{table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
 
             if inserts_data.get(table_name):
-                data = re.sub(
-                    rf"INSERT INTO `{table_name}` \([^\(\)]+\) VALUES", ",", data
-                )
+                data = re.sub(rf"INSERT INTO `{table_name}` \([^\(\)]+\) VALUES", ",", data)
                 inserts_data[table_name] = inserts_data[table_name].rstrip(";\n") + data
             else:
                 inserts_data[table_name] = data
@@ -129,17 +119,10 @@ def _get_fks(
     columns_fk_referenced: dict[str, list[ForeignKeyReference]] = {}
     for table_data in structure:
         for fk in table_data.foreign_keys:
-            if (
-                fk.referenced_table_name == table_name
-                and fk.referenced_column_name in columns_to_change
-            ):
-                fk_reference = ForeignKeyReference(
-                    table_name=table_data.table_name, column_name=fk.column_name
-                )
+            if fk.referenced_table_name == table_name and fk.referenced_column_name in columns_to_change:
+                fk_reference = ForeignKeyReference(table_name=table_data.table_name, column_name=fk.column_name)
                 if columns_fk_referenced.get(fk.referenced_column_name):
-                    columns_fk_referenced[fk.referenced_column_name].append(
-                        fk_reference
-                    )
+                    columns_fk_referenced[fk.referenced_column_name].append(fk_reference)
                 else:
                     columns_fk_referenced[fk.referenced_column_name] = [fk_reference]
 
@@ -148,10 +131,7 @@ def _get_fks(
 
 def get_insert_column_names(insert_line: str) -> list[str]:
     columns_str = re.findall(r"\([^\)]*\)(?= VALUES)", insert_line)
-    return [
-        name.strip(" ")
-        for name in columns_str[0].strip("() ").replace("`", "").split(",")
-    ]
+    return [name.strip(" ") for name in columns_str[0].strip("() ").replace("`", "").split(",")]
 
 
 def anonymize(
@@ -171,8 +151,7 @@ def anonymize(
         column_names = get_insert_column_names(insert_line)
 
         column_names_and_indexes_to_change = [
-            (column, column_names.index(column.name), column_types.get(column.name))
-            for column in columns_to_change
+            (column, column_names.index(column.name), column_types.get(column.name)) for column in columns_to_change
         ]
         new_line, changes = get_line_with_randomized_values(
             insert_line,
@@ -183,9 +162,7 @@ def anonymize(
         )
 
         inserts_dict[table_name] = new_line
-        inserts_dict = propagate_changes_in_fks(
-            inserts_dict, columns_fk_referenced, changes
-        )
+        inserts_dict = propagate_changes_in_fks(inserts_dict, columns_fk_referenced, changes)
     return inserts_dict
 
 
@@ -196,10 +173,7 @@ def get_line_with_randomized_values(
     columns_in_insert_statement: list[str],
     columns_fk_referenced: dict[str, list[ForeignKeyReference]],
 ) -> tuple[str, dict[str, dict[Any, Any]]]:
-    insert_rows = [
-        line_to_list_regex(x)
-        for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")
-    ]
+    insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
     faker = Faker()
     changes: dict[str, dict[Any, Any]] = {}
 
@@ -219,19 +193,23 @@ def get_line_with_randomized_values(
                 date = faker.date_time().strftime("%Y-%m-%d")
                 row[index] = f"'{date}'"
             elif column_sql_type == "float":
-                row[index] = f"{random.uniform(*column.interval):.3f}" if column.interval else f"{random.uniform(0, 1):.3f}"
+                row[index] = (
+                    f"{random.uniform(*column.interval):.3f}" if column.interval else f"{random.uniform(0, 1):.3f}"
+                )
             elif column_sql_type == "int":
-                row[index] = str(random.randint(*[int(endpoint) for endpoint in column.interval])) if column.interval else str(random.randint(0, 100))
+                row[index] = (
+                    str(random.randint(*[int(endpoint) for endpoint in column.interval]))
+                    if column.interval
+                    else str(random.randint(0, 100))
+                )
             elif column_sql_type.startswith("tinyint"):
                 row[index] = random.choice([0, 1])
             elif column_sql_type.startswith("enum"):
-                enum_values = column_sql_type[column_sql_type.index("m") + 1:].strip("()").split(",")
+                enum_values = column_sql_type[column_sql_type.index("m") + 1 :].strip("()").split(",")
                 row[index] = random.choice(enum_values)
             else:
                 row[index] = faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")
-            if column_name in columns_fk_referenced and not column_changes.get(
-                old_value
-            ):
+            if column_name in columns_fk_referenced and not column_changes.get(old_value):
                 column_changes[old_value] = row[index]
             elif column_name in columns_fk_referenced:
                 row[index] = column_changes[old_value]
@@ -257,10 +235,7 @@ def propagate_changes_in_fks(
             line = inserts_dict[table_reference.table_name]
             column_names = get_insert_column_names(line)
             column_index = column_names.index(table_reference.column_name)
-            insert_rows = [
-                line_to_list_regex(x)
-                for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")
-            ]
+            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
             for row in insert_rows:
                 row[column_index] = changes[column_name][row[column_index]]
 
@@ -335,9 +310,7 @@ def main():
 
     tables_structure = read_dump_table_structure(original)
     inserts = read_dump_inserts(original, tables_structure)
-    inserts = anonymize(
-        inserts, tables_structure, parsed_settings
-    )
+    inserts = anonymize(inserts, tables_structure, parsed_settings)
 
     print(f"Writing changes in file {target}")
     write_in_file(original, target, inserts)

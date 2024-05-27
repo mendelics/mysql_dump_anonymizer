@@ -1,0 +1,50 @@
+[tool.poetry]
+name = "mysql_dump_anonymizer"
+version = "0.1.0"
+description = "Tool to anonymize mysql dumps"
+authors = ["Mendelics <dev@mendelics.com.br>"]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pydantic = "^2.6.2"
+faker = "^25.2.0"
+rstr = "^3.2.2"
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.3.0"
+isort = "^5.12.0"
+mypy = "^1.8.0"
+pre-commit = "^3.6.2"
+pylint = "^2.17.7"
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+pretty = true
+show_error_codes = true
+strict = true
+
+[tool.pylint.master]
+extension-pkg-allow-list = ["pydantic", "rapidjson"]
+
+[tool.pylint.messages-control]
+disable = [
+  "duplicate-code",
+  "missing-class-docstring",
+  "missing-function-docstring",
+  "missing-module-docstring",
+  "too-few-public-methods",
+  "too-many-arguments",
+  "too-many-instance-attributes",
+  "too-many-public-methods",
+]
+
+[tool.pylint.format]
+max-line-length = 120
+good-names = ["_", "ex", "of", "pk", "to"]
