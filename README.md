@@ -1,4 +1,4 @@
-# mysql Dump Anonymizer
+# MySQL Dump Anonymizer
 
 Este projeto é uma ferramenta CLI para gerar um arquivo dump mysql com valores de colunas anonimizadas,
 após ser fornecido um arquivo dump mysql como entrada.
@@ -8,14 +8,34 @@ python mysql_dump_anonymizer/main.py <dump original> --target_file <arquivo dump
 ```
 O script automaticamente propaga os valores alterados para foreign keys correspondentes. Desta forma, não se deve configurá-lo para alterar tanto uma coluna "mãe" de uma foreign key quanto uma "filha".
 
-## Instalação
+## Configuração inicial
 
-Basta instalar o ambiente conda associado:
-```
-conda env create -f environment.yml
-```
+Este projeto foi escrito em python +3.10 e utiliza o [Poetry](https://python-poetry.org/) para gerenciar suas dependências.
+Consulte a [documentação oficial](https://python-poetry.org/docs/#installation) para instalá-lo se ainda não o fez.
 
-### Arquivo de configuração
+
+### Ambiente virtual Python com Conda
+1. Para que o Poetry não gerencie seus ambientes virtuais, configure-o para não criar novos ambientes virtuais
+automaticamente (veja [docs](https://python-poetry.org/docs/faq/#i-dont-want-poetry-to-manage-my-virtual-environments-can-i-disable-it) para mais detalhes).
+    ```sh
+    poetry config virtualenvs.create false
+    ```
+1. Cirie um novo ambiente virtual com conda
+    ```
+    conda env create -f environment.yml
+    ```
+1. Ative o ambiente virtual
+    ```
+    conda activate dump-anon
+    ```
+
+### Intalação das dependências
+    ```
+    poetry install
+    ```
+
+
+## Arquivo de configuração
 Para utilizar o script, é necessário um arquivo de configuração, para especificar que colunas devem ser alteradas.
 Abaixo, um exemplo de arquivo de configuração.
 ```
