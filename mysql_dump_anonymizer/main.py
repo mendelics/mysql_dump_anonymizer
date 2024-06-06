@@ -1,35 +1,25 @@
+import argparse
 import json
+import random
 import re
 import time
 from typing import Any
 
 from faker import Faker
 from models import (
+    ColumnChangeSettings,
     ForeignKeyData,
-    TableColumn,
-    TableData,
     ForeignKeyReference,
     TableChangeSettings,
-    ColumnChangeSettings,
+    TableColumn,
+    TableData,
 )
-import argparse
-
 from rstr import xeger
-import random
-
-time_char_by_char = 0
-time_regex = 0
-
-time_total = 0
-time_update_changes_dict = 0
 
 
-def line_to_list_regex(line: str) -> list[str]:
-    global time_regex
-    begin = time.time()
+def line_to_list(line: str) -> list[str]:
     clean_line = line.strip("() ;").replace("`", "")
     ret = re.findall("'[^']*'|[^,]+(?=,)|(?<=\")[^,]+(?=,)|(?<=,)[^,]+", clean_line)
-    time_regex += time.time() - begin
     return ret
 
 
@@ -91,15 +81,13 @@ def read_dump_inserts(dump_filename: str, dump_structure: list[TableData]) -> di
                 continue
 
             table_name = line.lower().split("`")[1]
-            if table_name == "dependency_log":
-                a = 3
             column_names = re.findall(r"\([^\)]*\)(?= VALUES)", line)
             if column_names:
                 column_names = [name.strip(" ") for name in column_names[0].strip("() ").replace("`", "").split(",")]
             else:
                 column_names = tables_metadata[table_name]
 
-            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
+            insert_rows = [line_to_list(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
             joined_insert_rows = [",".join(row) for row in insert_rows]
             column_names = [f"`{column_name}`" for column_name in column_names]
             data = f"INSERT INTO `{table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
@@ -147,7 +135,10 @@ def anonymize(
 
         columns_to_change_names = [column.name for column in columns_to_change]
         columns_fk_referenced = _get_fks(table_name, columns_to_change_names, structure)
-        insert_line = inserts_dict[table_name]
+        try:
+            insert_line = inserts_dict[table_name]
+        except KeyError:
+            continue
         column_names = get_insert_column_names(insert_line)
 
         column_names_and_indexes_to_change = [
@@ -173,7 +164,7 @@ def get_line_with_randomized_values(
     columns_in_insert_statement: list[str],
     columns_fk_referenced: dict[str, list[ForeignKeyReference]],
 ) -> tuple[str, dict[str, dict[Any, Any]]]:
-    insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
+    insert_rows = [line_to_list(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
     faker = Faker()
     changes: dict[str, dict[Any, Any]] = {}
 
@@ -184,6 +175,8 @@ def get_line_with_randomized_values(
             old_value = row[index]
             if column.subtype == "UUID":
                 row[index] = f"'{faker.uuid4()}'"
+            elif column.subtype == "uri":
+                row[index] = f"'{faker.uri()}'"
             elif column.regex is not None:
                 row[index] = f"'{xeger(column.regex)}'"
             elif column_sql_type.startswith("datetime"):
@@ -235,12 +228,15 @@ def propagate_changes_in_fks(
             line = inserts_dict[table_reference.table_name]
             column_names = get_insert_column_names(line)
             column_index = column_names.index(table_reference.column_name)
-            insert_rows = [line_to_list_regex(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
+            insert_rows = [line_to_list(x) for x in re.findall("(?<=VALUES) .*", line)[0].split("),(")]
             for row in insert_rows:
-                row[column_index] = changes[column_name][row[column_index]]
+                row[column_index] = changes[column_name].get(row[column_index], "NULL")
 
             joined_insert_rows = [",".join(row) for row in insert_rows]
-            new_line = f"INSERT INTO `{table_reference.table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
+            new_line = (
+                f"INSERT INTO `{table_reference.table_name}` "
+                f"({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
+            )
             inserts_dict[table_reference.table_name] = new_line
 
     return inserts_dict
