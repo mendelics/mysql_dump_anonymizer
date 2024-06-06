@@ -93,7 +93,7 @@ def read_dump_inserts(dump_filename: str, dump_structure: list[TableData]) -> di
             data = f"INSERT INTO `{table_name}` ({','.join(column_names)}) VALUES ({'),('.join(joined_insert_rows)});"
 
             if inserts_data.get(table_name):
-                data = re.sub(rf"INSERT INTO `{table_name}` \([^\(\)]+\) VALUES", ",", data)
+                data = re.sub(rf"INSERT INTO `{table_name}` \([^\(\)]+\) VALUES ", ",", data)
                 inserts_data[table_name] = inserts_data[table_name].rstrip(";\n") + data
             else:
                 inserts_data[table_name] = data
@@ -201,7 +201,7 @@ def get_line_with_randomized_values(
                 enum_values = column_sql_type[column_sql_type.index("m") + 1 :].strip("()").split(",")
                 row[index] = random.choice(enum_values)
             else:
-                row[index] = faker.lexify(f"'{table_name}-{column_name}-?????-{i + 1}'")
+                row[index] = faker.lexify(f"'????-????-{i + 1}'")
             if column_name in columns_fk_referenced and not column_changes.get(old_value):
                 column_changes[old_value] = row[index]
             elif column_name in columns_fk_referenced:
