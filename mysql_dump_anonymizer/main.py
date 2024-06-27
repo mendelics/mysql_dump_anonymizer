@@ -16,6 +16,8 @@ from models import (
 )
 from rstr import xeger
 
+RESERVED_KEYWORDS = ["rows", "order", "columns", "description"]
+
 
 def line_to_list(line: str) -> list[str]:
     clean_line = line.strip("() ;").replace("`", "")
@@ -119,7 +121,14 @@ def _get_fks(
 
 def get_insert_column_names(insert_line: str) -> list[str]:
     columns_str = re.findall(r"\([^\)]*\)(?= VALUES)", insert_line)
-    return [name.strip(" ") for name in columns_str[0].strip("() ").replace("`", "").split(",")]
+    names = [name.strip(" ") for name in columns_str[0].strip("() ").replace("`", "").split(",")]
+
+    for reserved_keyword in RESERVED_KEYWORDS:
+        try:
+            names[names.index(reserved_keyword)] = f"`{reserved_keyword}`"
+        except ValueError:
+            continue
+    return names
 
 
 def anonymize(
@@ -142,7 +151,16 @@ def anonymize(
         column_names = get_insert_column_names(insert_line)
 
         column_names_and_indexes_to_change = [
-            (column, column_names.index(column.name), column_types.get(column.name)) for column in columns_to_change
+            (
+                column,
+                (
+                    column_names.index(column.name)
+                    if column.name not in RESERVED_KEYWORDS
+                    else column_names.index(f"`{column.name}`")
+                ),
+                column_types.get(column.name),
+            )
+            for column in columns_to_change
         ]
         new_line, changes = get_line_with_randomized_values(
             insert_line,
